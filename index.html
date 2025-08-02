@@ -1,0 +1,77 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MSTR NAV Tool</title>
+  <style>
+    body {
+      background-color: #111;
+      color: #eee;
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    input {
+      padding: 8px;
+      margin: 5px;
+    }
+    button {
+      padding: 10px 20px;
+      margin-top: 10px;
+      background: #333;
+      color: #eee;
+      border: none;
+      cursor: pointer;
+    }
+    .box {
+      background: #222;
+      padding: 20px;
+      border-radius: 10px;
+      max-width: 600px;
+      margin: 20px auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>MSTR NAV Tool</h2>
+    <form method="POST">
+      <div>
+        <label>BTC Held by MSTR:</label><br />
+        <input type="number" name="btc_held" value="{{ defaults.btc_held }}" />
+      </div>
+      <div>
+        <label>Shares Outstanding:</label><br />
+        <input type="number" name="shares_out" value="{{ defaults.shares_out }}" />
+      </div>
+      <div>
+        <label>BTC Projected Price:</label><br />
+        <input type="number" name="btc_future" value="{{ defaults.btc_future }}" />
+      </div>
+      <button type="submit">Calculate</button>
+    </form>
+
+    {% if result %}
+    <hr />
+    <h3>Expected Move Ranges</h3>
+    {% for label, data in result.moves.items() %}
+      {% if data %}
+        <p><b>{{ label }} ({{ data.exp }})</b><br />
+        High: ${{ data.high }}<br />
+        Low: ${{ data.low }}</p>
+      {% endif %}
+    {% endfor %}
+
+    <h3>mNAV: {{ result.mnav }}</h3>
+    <p>MSTR price at mNAV = 1: ${{ result.price_at_1 }}</p>
+    <p>MSTR price at mNAV = 2.5: ${{ result.price_at_25 }}</p>
+    <p>MSTR price at mNAV = 4: ${{ result.price_at_4 }}</p>
+
+    <h3>MSTR Price at BTC Projected Price</h3>
+    <p>mNAV = 2.5 → ${{ result.projected_25 }}</p>
+    <p>mNAV = 4   → ${{ result.projected_4 }}</p>
+    {% endif %}
+  </div>
+</body>
+</html>
