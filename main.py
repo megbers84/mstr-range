@@ -35,20 +35,22 @@ def fetch_fng():
 def fetch_mvrv():
     try:
         price = yf.Ticker("BTC-USD").history(period="1d")["Close"].iloc[-1]
-        supply = 19_700_000  # current BTC supply (approx.)
+        supply = 19_700_000
         market_cap = price * supply
 
-        url = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
+        url = "https://community-api.coinmetrics.io/v2/assets/btc/metric-data"
         params = {
-            "assets": "btc",
             "metrics": "CapRealizedUSD",
-            "frequency": "1d",
             "start": date.today().strftime("%Y-%m-%d"),
-            "limit": 1
+            "end": date.today().strftime("%Y-%m-%d"),
+            "frequency": "1d"
         }
         r = requests.get(url, params=params)
-        realized_cap = float(r.json()["data"][0]["CapRealizedUSD"])
+        values = r.json().get("data", {}).get("metricData", {}).get("series", [])
+        if not values or not values[0] or len(values[0]) < 2:
+            return "N/A"
 
+        realized_cap = float(values[0][1])
         return round(market_cap / realized_cap, 2)
     except:
         return "N/A"
