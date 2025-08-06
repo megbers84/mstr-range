@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -71,6 +70,10 @@
     <h3>MSTR Price at BTC Projected Price</h3>
     <p>mNAV = 2.5 → ${{ result.projected_25 }}</p>
     <p>mNAV = 4   → ${{ result.projected_4 }}</p>
+
+    <h3>Market Sentiment</h3>
+    <p><b>MVRV Z‑Score:</b> {{ result.mvrv_z }}</p>
+    <p><b>Fear & Greed Index:</b> {{ result.fear_greed.value }} ({{ result.fear_greed.classification }})</p>
     {% endif %}
   </div>
   
@@ -85,8 +88,6 @@
     margin-top: 40px;">
     ⚡ Donate with Lightning
 </a>
-
-
 
 </body>
 </html>
