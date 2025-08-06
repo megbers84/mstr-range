@@ -1,10 +1,11 @@
-
+# top imports (unchanged)
 from flask import Flask, render_template, request
 import yfinance as yf
 import requests
 import re
 import math
 from datetime import date
+import os  # moved up
 
 app = Flask(__name__)
 
@@ -20,6 +21,28 @@ def fetch_shares_outstanding():
             return int(num * (1_000_000 if suffix == "M" else 1_000_000_000))
     except:
         return None
+
+# --- new ---
+def fetch_fng():
+    try:
+        res = requests.get("https://api.alternative.me/fng/?limit=1&format=json")
+        data = res.json().get("data", [{}])[0]
+        return {
+            "value": data.get("value"),
+            "classification": data.get("value_classification")
+        }
+    except:
+        return {"value": "N/A", "classification": "N/A"}
+
+# --- new ---
+def fetch_mvrv():
+    try:
+        # replace with a real API if available
+        res = requests.get("https://api.coinglass.com/api/pro/v0/indicators/bitcoin-mvrv-zscore")
+        data = res.json().get("data")
+        return data.get("zscore") if data else "N/A"
+    except:
+        return "N/A"
 
 def get_data(btc_held, shares_out, btc_future):
     btc = yf.Ticker("BTC-USD")
@@ -76,7 +99,9 @@ def get_data(btc_held, shares_out, btc_future):
         "projected_25": round(price_25),
         "projected_4": round(price_40),
         "btc_price": round(btc_price),
-        "moves": moves
+        "moves": moves,
+        "fear_greed": fetch_fng(),      # --- new ---
+        "mvrv_z": fetch_mvrv()          # --- new ---
     }
 
 @app.route("/", methods=["GET", "POST"])
@@ -96,10 +121,6 @@ def index():
         result = get_data(btc_held, shares_out, btc_future)
 
     return render_template("index.html", result=result, defaults=default_data)
-
-
-
-import os
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
