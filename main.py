@@ -1,11 +1,10 @@
-# top imports (unchanged)
 from flask import Flask, render_template, request
 import yfinance as yf
 import requests
 import re
 import math
 from datetime import date
-import os  # moved up
+import os
 
 app = Flask(__name__)
 
@@ -22,7 +21,6 @@ def fetch_shares_outstanding():
     except:
         return None
 
-# --- new ---
 def fetch_fng():
     try:
         res = requests.get("https://api.alternative.me/fng/?limit=1&format=json")
@@ -34,13 +32,24 @@ def fetch_fng():
     except:
         return {"value": "N/A", "classification": "N/A"}
 
-# --- new ---
 def fetch_mvrv():
     try:
-        # replace with a real API if available
-        res = requests.get("https://api.coinglass.com/api/pro/v0/indicators/bitcoin-mvrv-zscore")
-        data = res.json().get("data")
-        return data.get("zscore") if data else "N/A"
+        price = yf.Ticker("BTC-USD").history(period="1d")["Close"].iloc[-1]
+        supply = 19_700_000  # current BTC supply (approx.)
+        market_cap = price * supply
+
+        url = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
+        params = {
+            "assets": "btc",
+            "metrics": "CapRealizedUSD",
+            "frequency": "1d",
+            "start": date.today().strftime("%Y-%m-%d"),
+            "limit": 1
+        }
+        r = requests.get(url, params=params)
+        realized_cap = float(r.json()["data"][0]["CapRealizedUSD"])
+
+        return round(market_cap / realized_cap, 2)
     except:
         return "N/A"
 
@@ -100,8 +109,8 @@ def get_data(btc_held, shares_out, btc_future):
         "projected_4": round(price_40),
         "btc_price": round(btc_price),
         "moves": moves,
-        "fear_greed": fetch_fng(),      # --- new ---
-        "mvrv_z": fetch_mvrv()          # --- new ---
+        "fear_greed": fetch_fng(),
+        "mvrv_z": fetch_mvrv()
     }
 
 @app.route("/", methods=["GET", "POST"])
