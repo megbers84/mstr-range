@@ -1,46 +1,59 @@
 from flask import Flask, render_template, request
 import yfinance as yf
-import requests
-import re
-import math
-from datetime import date
-import os
+import requests, re, math, json, os
+from datetime import date, timedelta
 
 app = Flask(__name__)
+RANGE_FILE = "ranges.json"
+
+def _load_ranges():
+    if os.path.exists(RANGE_FILE):
+        try:
+            with open(RANGE_FILE, "r") as f:
+                return json.load(f)
+        except:
+            pass
+    return {"weekly": {}, "monthly": {}}
+
+def _save_ranges(data):
+    tmp = RANGE_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, RANGE_FILE)
+
+def _monday(d: date) -> date:
+    return d - timedelta(days=d.weekday())  # Monday anchor
+
+def _first_of_month(d: date) -> date:
+    return d.replace(day=1)
 
 def fetch_shares_outstanding():
     try:
         url = "https://finviz.com/quote.ashx?t=MSTR"
         headers = {"User-Agent": "Mozilla/5.0"}
         resp = requests.get(url, headers=headers, timeout=10)
-        match = re.search(r"Shs Outstand</td><td.*?>([\d\.]+)([MB])", resp.text)
-        if match:
-            num = float(match.group(1)); suffix = match.group(2)
-            return int(num * (1_000_000 if suffix == "M" else 1_000_000_000))
+        m = re.search(r"Shs Outstand</td><td.*?>([\d\.]+)([MB])", resp.text)
+        if m:
+            num = float(m.group(1)); suf = m.group(2)
+            return int(num * (1_000_000 if suf == "M" else 1_000_000_000))
     except:
-        return None
+        pass
+    return None
 
 def fetch_btc_held():
     headers = {"User-Agent": "Mozilla/5.0"}
-    # Primary: Bitbo MicroStrategy page
+    # Primary: Bitbo page
     try:
         r = requests.get("https://bitbo.io/treasuries/microstrategy", headers=headers, timeout=10)
-        # e.g., "MicroStrategy owns 629,376 bitcoins"
         m = re.search(r"owns\s+([\d,]+)\s+bitcoins", r.text, flags=re.I)
-        if m:
-            return int(m.group(1).replace(",", ""))
-        # fallback pattern near value block
-        m = re.search(r'(\d{1,3}(?:,\d{3})+)\s*\$\d', r.text)
-        if m:
-            return int(m.group(1).replace(",", ""))
+        if m: return int(m.group(1).replace(",", ""))
     except:
         pass
-    # Secondary: BitcoinTreasuries page
+    # Fallback: BitcoinTreasuries page
     try:
         r = requests.get("https://bitcointreasuries.net/public-companies/microstrategy", headers=headers, timeout=10)
         m = re.search(r'hold\s+([\d,]+)\s*BTC', r.text, flags=re.I)
-        if m:
-            return int(m.group(1).replace(",", ""))
+        if m: return int(m.group(1).replace(",", ""))
     except:
         pass
     return None
@@ -72,46 +85,107 @@ def fetch_mvrv():
     except:
         return "N/A"
 
+def _expected_move(iv, base_price, days):
+    return base_price * iv * math.sqrt(days / 365)
+
+def _avg_iv_for_exp(ticker, exp_str):
+    try:
+        chain = ticker.option_chain(exp_str)
+        ivs = list(chain.calls['impliedVolatility']) + list(chain.puts['impliedVolatility'])
+        ivs = [v for v in ivs if v and 0 < v < 5]
+        return sum(ivs)/len(ivs) if ivs else None
+    except:
+        return None
+
+def _closest_expiry(target_days, all_dates):
+    tgt = date.today().toordinal() + target_days
+    return min(all_dates, key=lambda d: abs(date.fromisoformat(d).toordinal() - tgt))
+
+def _compute_range_once(kind, anchor_dt, ticker_obj, ref_price):
+    """kind: 'weekly'(7d) or 'monthly'(30d)."""
+    all_exp = ticker_obj.options
+    if not all_exp:
+        return None
+    target_days = 7 if kind == "weekly" else 30
+    exp = _closest_expiry(target_days, all_exp)
+    iv = _avg_iv_for_exp(ticker_obj, exp)
+    if not iv:
+        return None
+    days = max((date.fromisoformat(exp) - anchor_dt).days, 1)
+    move = _expected_move(iv, ref_price, days)
+    return {
+        "anchor": anchor_dt.isoformat(),
+        "exp": exp,
+        "days": days,
+        "iv": round(iv, 4),
+        "low": round(ref_price - move, 2),
+        "high": round(ref_price + move, 2),
+        "ref_price": round(ref_price, 2)
+    }
+
+def _ensure_ranges(ticker_obj, yesterday_close):
+    """Persist weekly/monthly 1σ; recompute only on Monday/1st."""
+    today = date.today()
+    weekly_anchor = _monday(today)
+    monthly_anchor = _first_of_month(today)
+
+    store = _load_ranges()
+
+    if store.get("weekly", {}).get("anchor") != weekly_anchor.isoformat():
+        wk = _compute_range_once("weekly", weekly_anchor, ticker_obj, yesterday_close)
+        if wk: store["weekly"] = wk
+
+    if store.get("monthly", {}).get("anchor") != monthly_anchor.isoformat():
+        mo = _compute_range_once("monthly", monthly_anchor, ticker_obj, yesterday_close)
+        if mo: store["monthly"] = mo
+
+    _save_ranges(store)
+    return store
+
+def _signal(price, low, high):
+    if price < low: return "BUY"
+    if price > high: return "SELL"
+    return ""
+
 def get_data(btc_held, shares_out, btc_future):
     btc = yf.Ticker("BTC-USD")
     btc_price = btc.history(period="1d")["Close"].iloc[-1]
+
     ticker = yf.Ticker("MSTR")
     price = ticker.history(period="1d")["Close"].iloc[-1]
     hist = ticker.history(period="2d")
     yesterday_close = hist["Close"].iloc[-2]
+
+    # Persisted 1σ ranges (weekly/monthly)
+    ranges = _ensure_ranges(ticker, yesterday_close)
+    wk, mo = ranges.get("weekly"), ranges.get("monthly")
+    weekly_signal = _signal(price, wk["low"], wk["high"]) if wk else ""
+    monthly_signal = _signal(price, mo["low"], mo["high"]) if mo else ""
+
     btc_value = btc_price * btc_held
     market_cap = price * shares_out
     mnav = market_cap / btc_value
 
-    def expected_move(iv, base_price, days):
-        return base_price * iv * math.sqrt(days / 365)
+    # Keep your existing short-term expected moves
+    def closest_expiry(target_days, all_dates):
+        return _closest_expiry(target_days, all_dates)
 
     def get_avg_iv(date_str):
-        try:
-            chain = ticker.option_chain(date_str)
-            ivs = list(chain.calls['impliedVolatility']) + list(chain.puts['impliedVolatility'])
-            ivs = [v for v in ivs if v and 0 < v < 5]
-            return sum(ivs) / len(ivs) if ivs else None
-        except:
-            return None
-
-    def closest_expiry(target_days, all_dates):
-        target = date.today().toordinal() + target_days
-        return min(all_dates, key=lambda d: abs(date.fromisoformat(d).toordinal() - target))
+        return _avg_iv_for_exp(ticker, date_str)
 
     targets = {"1 Day": 1, "1 Week": 7, "1 Month": 30}
     all_expiries = ticker.options
-    expiries = {label: closest_expiry(days, all_expiries) for label, days in targets.items()}
+    expiries = {lbl: closest_expiry(days, all_expiries) for lbl, days in targets.items()} if all_expiries else {}
 
     moves = {}
     for label, exp in expiries.items():
         iv = get_avg_iv(exp)
         if iv:
             days = max((date.fromisoformat(exp) - date.today()).days, 1)
-            move = expected_move(iv, yesterday_close, days)
-            high = yesterday_close + move
-            low = yesterday_close - move
-            moves[label] = {"high": round(high), "low": round(low), "exp": exp}
+            move = _expected_move(iv, yesterday_close, days)
+            moves[label] = {"high": round(yesterday_close + move),
+                            "low": round(yesterday_close - move),
+                            "exp": exp}
         else:
             moves[label] = None
 
@@ -129,7 +203,11 @@ def get_data(btc_held, shares_out, btc_future):
         "btc_price": round(btc_price),
         "moves": moves,
         "fear_greed": fetch_fng(),
-        "mvrv_z": fetch_mvrv()
+        "mvrv_z": fetch_mvrv(),
+        "weekly_range": wk,
+        "monthly_range": mo,
+        "weekly_signal": weekly_signal,
+        "monthly_signal": monthly_signal
     }
 
 @app.route("/", methods=["GET", "POST"])
