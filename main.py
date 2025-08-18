@@ -12,23 +12,44 @@ def fetch_shares_outstanding():
     try:
         url = "https://finviz.com/quote.ashx?t=MSTR"
         headers = {"User-Agent": "Mozilla/5.0"}
-        resp = requests.get(url, headers=headers)
+        resp = requests.get(url, headers=headers, timeout=10)
         match = re.search(r"Shs Outstand</td><td.*?>([\d\.]+)([MB])", resp.text)
         if match:
-            num = float(match.group(1))
-            suffix = match.group(2)
+            num = float(match.group(1)); suffix = match.group(2)
             return int(num * (1_000_000 if suffix == "M" else 1_000_000_000))
     except:
         return None
 
+def fetch_btc_held():
+    headers = {"User-Agent": "Mozilla/5.0"}
+    # Primary: Bitbo MicroStrategy page
+    try:
+        r = requests.get("https://bitbo.io/treasuries/microstrategy", headers=headers, timeout=10)
+        # e.g., "MicroStrategy owns 629,376 bitcoins"
+        m = re.search(r"owns\s+([\d,]+)\s+bitcoins", r.text, flags=re.I)
+        if m:
+            return int(m.group(1).replace(",", ""))
+        # fallback pattern near value block
+        m = re.search(r'(\d{1,3}(?:,\d{3})+)\s*\$\d', r.text)
+        if m:
+            return int(m.group(1).replace(",", ""))
+    except:
+        pass
+    # Secondary: BitcoinTreasuries page
+    try:
+        r = requests.get("https://bitcointreasuries.net/public-companies/microstrategy", headers=headers, timeout=10)
+        m = re.search(r'hold\s+([\d,]+)\s*BTC', r.text, flags=re.I)
+        if m:
+            return int(m.group(1).replace(",", ""))
+    except:
+        pass
+    return None
+
 def fetch_fng():
     try:
-        res = requests.get("https://api.alternative.me/fng/?limit=1&format=json")
+        res = requests.get("https://api.alternative.me/fng/?limit=1&format=json", timeout=10)
         data = res.json().get("data", [{}])[0]
-        return {
-            "value": data.get("value"),
-            "classification": data.get("value_classification")
-        }
+        return {"value": data.get("value"), "classification": data.get("value_classification")}
     except:
         return {"value": "N/A", "classification": "N/A"}
 
@@ -37,20 +58,16 @@ def fetch_mvrv():
         price = yf.Ticker("BTC-USD").history(period="1d")["Close"].iloc[-1]
         supply = 19_700_000
         market_cap = price * supply
-
         url = "https://community-api.coinmetrics.io/v2/assets/btc/metric-data"
-        params = {
-            "metrics": "CapRealizedUSD",
-            "start": date.today().strftime("%Y-%m-%d"),
-            "end": date.today().strftime("%Y-%m-%d"),
-            "frequency": "1d"
-        }
-        r = requests.get(url, params=params)
-        values = r.json().get("data", {}).get("metricData", {}).get("series", [])
-        if not values or not values[0] or len(values[0]) < 2:
+        params = {"metrics": "CapRealizedUSD",
+                  "start": date.today().strftime("%Y-%m-%d"),
+                  "end": date.today().strftime("%Y-%m-%d"),
+                  "frequency": "1d"}
+        r = requests.get(url, params=params, timeout=10)
+        series = r.json().get("data", {}).get("metricData", {}).get("series", [])
+        if not series or not series[0] or len(series[0]) < 2:
             return "N/A"
-
-        realized_cap = float(values[0][1])
+        realized_cap = float(series[0][1])
         return round(market_cap / realized_cap, 2)
     except:
         return "N/A"
@@ -118,13 +135,10 @@ def get_data(btc_held, shares_out, btc_future):
 @app.route("/", methods=["GET", "POST"])
 def index():
     live_shares = fetch_shares_outstanding() or 156_473_000
-    default_data = {
-        "btc_held": 628791,
-        "shares_out": live_shares,
-        "btc_future": 250000
-    }
-    result = None
+    live_btc = fetch_btc_held() or 628_791
+    default_data = {"btc_held": live_btc, "shares_out": live_shares, "btc_future": 250000}
 
+    result = None
     if request.method == "POST":
         btc_held = int(request.form.get("btc_held") or default_data["btc_held"])
         shares_out = int(request.form.get("shares_out") or default_data["shares_out"])
