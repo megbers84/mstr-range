@@ -1,92 +1,95 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MSTR NAV Tool</title>
+  <meta charset="utf-8">
+  <title>MSTR Monitor</title>
   <style>
-    body {
-      background-color: #111;
-      color: #eee;
-      font-family: Arial, sans-serif;
-      padding: 20px;
-    }
-    input {
-      padding: 8px;
-      margin: 5px;
-    }
-    button {
-      padding: 10px 20px;
-      margin-top: 10px;
-      background: #333;
-      color: #eee;
-      border: none;
-      cursor: pointer;
-    }
-    .box {
-      background: #222;
-      padding: 20px;
-      border-radius: 10px;
-      max-width: 600px;
-      margin: 20px auto;
-    }
+    body { font-family: Arial, sans-serif; margin: 24px; }
+    .card { border:1px solid #ddd; border-radius:8px; padding:16px; margin:12px 0; }
+    .row { display:flex; gap:16px; flex-wrap:wrap; }
+    .col { flex:1 1 280px; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid #ccc; margin-left:8px; }
   </style>
 </head>
 <body>
-  <div class="box">
-    <h2>MSTR NAV Tool</h2>
-    <form method="POST">
-      <div>
-        <label>BTC Held by MSTR:</label><br />
-        <input type="number" name="btc_held" value="{{ defaults.btc_held }}" />
+  <h2>MSTR Dashboard</h2>
+
+  <form method="POST" class="card">
+    <label>BTC Held:
+      <input type="number" name="btc_held" value="{{ defaults.btc_held }}" required>
+    </label>
+    &nbsp;&nbsp;
+    <label>Shares Out:
+      <input type="number" name="shares_out" value="{{ defaults.shares_out }}" required>
+    </label>
+    &nbsp;&nbsp;
+    <label>Future BTC Price:
+      <input type="number" name="btc_future" value="{{ defaults.btc_future }}" required>
+    </label>
+    &nbsp;&nbsp;
+    <button type="submit">Run</button>
+  </form>
+
+  {% if result %}
+    <div class="row">
+      <div class="col card">
+        <h3>Weekly 1σ</h3>
+        {% if result.weekly_range %}
+          <div>
+            {{ result.weekly_range.low }} – {{ result.weekly_range.high }}
+            <span class="pill">{{ result.weekly_signal }}</span>
+          </div>
+          <small>
+            Ref: {{ result.weekly_range.ref_price }} |
+            Exp: {{ result.weekly_range.exp }} |
+            Anchor: {{ result.weekly_range.anchor }} |
+            IV: {{ result.weekly_range.iv }}
+          </small>
+        {% else %}
+          <small>Not available.</small>
+        {% endif %}
       </div>
-      <div>
-        <label>Shares Outstanding:</label><br />
-        <input type="number" name="shares_out" value="{{ defaults.shares_out }}" />
+
+      <div class="col card">
+        <h3>Monthly 1σ</h3>
+        {% if result.monthly_range %}
+          <div>
+            {{ result.monthly_range.low }} – {{ result.monthly_range.high }}
+            <span class="pill">{{ result.monthly_signal }}</span>
+          </div>
+          <small>
+            Ref: {{ result.monthly_range.ref_price }} |
+            Exp: {{ result.monthly_range.exp }} |
+            Anchor: {{ result.monthly_range.anchor }} |
+            IV: {{ result.monthly_range.iv }}
+          </small>
+        {% else %}
+          <small>Not available.</small>
+        {% endif %}
       </div>
-      <div>
-        <label>BTC Projected Price:</label><br />
-        <input type="number" name="btc_future" value="{{ defaults.btc_future }}" />
-      </div>
-      <button type="submit">Calculate</button>
-    </form>
+    </div>
 
-    {% if result %}
-    <hr />
-    <h3>Expected Move Ranges</h3>
-    {% for label, data in result.moves.items() %}
-      {% if data %}
-        <p><b>{{ label }} ({{ data.exp }})</b><br />
-        High: ${{ data.high }}<br />
-        Low: ${{ data.low }}</p>
-      {% endif %}
-    {% endfor %}
+    <div class="card">
+      <h3>Core Metrics</h3>
+      <div>BTC Price: {{ result.btc_price }}</div>
+      <div>MNAV: {{ result.mnav }}</div>
+      <div>Price@1x: {{ result.price_at_1 }} | @2.5x: {{ result.price_at_25 }} | @4x: {{ result.price_at_4 }}</div>
+      <div>Projected @BTC {{ defaults.btc_future }}: 2.5x → {{ result.projected_25 }}, 4x → {{ result.projected_4 }}</div>
+      <div>Fear/Greed: {{ result.fear_greed.value }} ({{ result.fear_greed.classification }})</div>
+      <div>MVRV: {{ result.mvrv_z }}</div>
+    </div>
 
-    <h3>mNAV: {{ result.mnav }}</h3>
-    <p>MSTR price at mNAV = 1: ${{ result.price_at_1 }}</p>
-    <p>MSTR price at mNAV = 2.5: ${{ result.price_at_25 }}</p>
-    <p>MSTR price at mNAV = 4: ${{ result.price_at_4 }}</p>
-
-    <h3>MSTR Price at BTC Projected Price</h3>
-    <p>mNAV = 2.5 → ${{ result.projected_25 }}</p>
-    <p>mNAV = 4   → ${{ result.projected_4 }}</p>
-
-    <h3>Market Sentiment</h3>
-    <p><b>MVRV Ratio:</b> {{ result.mvrv_z }}</p>
-    <p><b>Fear & Greed Index:</b> {{ result.fear_greed.value }} ({{ result.fear_greed.classification }})</p>
-    {% endif %}
-  </div>
-  
-  <a href="https://getalby.com/p/inclusivebalance877896" target="_blank" style="
-    display:inline-block;
-    padding:12px 24px;
-    background:#f7931a;
-    color:#fff;
-    font-weight:bold;
-    text-decoration:none;
-    border-radius:6px;
-    margin-top: 40px;">
-    ⚡ Donate with Lightning
-  </a>
+    <div class="card">
+      <h3>Short-term Expected Moves</h3>
+      <ul>
+        {% for k, v in result.moves.items() %}
+          <li>
+            {{ k }}:
+            {% if v %} {{ v.low }} – {{ v.high }} (exp {{ v.exp }}) {% else %} N/A {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
 </body>
 </html>
