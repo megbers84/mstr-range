@@ -1,51 +1,44 @@
+<!-- Updated index.html – Black Theme -->
 <!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
   <title>MSTR Monitor</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 24px; background:#f9f9f9; }
-    .card { background:#fff; border:1px solid #ddd; border-radius:8px; padding:20px; margin:16px 0; box-shadow:0 2px 6px rgba(0,0,0,0.05); }
-    .row { display:flex; gap:20px; flex-wrap:wrap; }
-    .col { flex:1 1 300px; }
-    h2 { margin-top:0; }
-    h3 { margin:0 0 12px 0; color:#333; font-size:1.3em; }
-    .bold-header { font-weight:bold; font-size:1.1em; margin-bottom:8px; }
-    input[type=number] { width:120px; padding:6px; }
-    button { padding:8px 16px; background:#0066cc; color:white; border:none; border-radius:4px; cursor:pointer; }
-    button:hover { background:#0055aa; }
-    ul { padding-left:20px; }
+    body {font-family:Arial,sans-serif;margin:24px;background:#000;color:#eee;}
+    .card {background:#111;border:1px solid #333;border-radius:8px;padding:20px;margin:16px 0;box-shadow:0 4px 12px rgba(0,0,0,0.6);}
+    input[type=number]{background:#222;color:#fff;border:1px solid #555;padding:6px;width:120px;}
+    button{padding:8px 16px;background:#0088ff;color:white;border:none;border-radius:4px;cursor:pointer;}
+    button:hover{background:#0066cc;}
+    .bold{font-weight:bold;font-size:1.2em;margin:12px 0 8px 0;color:#fff;}
+    a{color:#88f;}
   </style>
 </head>
 <body>
-  <h2>MSTR Dashboard</h2>
-
+  <h2 style="color:#fff;">MSTR Dashboard</h2>
   <form method="POST" class="card">
-    <label>BTC Held: <input type="number" name="btc_held" value="{{ defaults.btc_held }}" required></label>
-    <label>Shares Out: <input type="number" name="shares_out" value="{{ defaults.shares_out }}" required></label>
-    <label>Future BTC Price: <input type="number" name="btc_future" value="{{ defaults.btc_future }}" required></label>
+    BTC Held: <input type="number" name="btc_held" value="{{ defaults.btc_held }}" required>
+    Shares Out: <input type="number" name="shares_out" value="{{ defaults.shares_out }}" required>
+    Future BTC: <input type="number" name="btc_future" value="{{ defaults.btc_future }}" required>
     <button type="submit">Run</button>
   </form>
 
   {% if result %}
     <div class="card">
-      <div class="bold-header">Core Metrics</div>
-      <div>BTC Price: {{ result.btc_price }}</div>
-      <div>MNAV: {{ result.mnav }}</div>
-      <div>Price@1x: {{ result.price_at_1 }} | @2.5x: {{ result.price_at_25 }} | @4x: {{ result.price_at_4 }}</div>
-      <div>Projected @BTC {{ defaults.btc_future }}: 2.5x → {{ result.projected_25 }}, 4x → {{ result.projected_4 }}</div>
-      <div>Fear/Greed: {{ result.fear_greed.value }} ({{ result.fear_greed.classification }})</div>
-      <div>MVRV: {{ result.mvrv_z }}</div>
+      <div class="bold">Core Metrics</div>
+      BTC Price: {{ result.btc_price }}<br>
+      MNAV: {{ result.mnav }}x<br>
+      Price@1x: {{ result.price_at_1 }} | @2.5x: {{ result.price_at_25 }} | @4x: {{ result.price_at_4 }}<br>
+      Projected @BTC {{ defaults.btc_future }}: 2.5x → {{ result.projected_25 }}, 4x → {{ result.projected_4 }}<br>
+      Fear/Greed: {{ result.fear_greed.value }} ({{ result.fear_greed.classification }})<br>
+      MVRV: {{ result.mvrv_z }}
     </div>
 
     <div class="card">
-      <div class="bold-header">Short-term Expected Moves</div>
+      <div class="bold">Short-term Expected Moves</div>
       <ul>
         {% for k, v in result.moves.items() %}
-          <li>
-            {{ k }}:
-            {% if v %} {{ v.low }} – {{ v.high }} (exp {{ v.exp }}) {% else %} N/A {% endif %}
-          </li>
+          <li>{{ k }}: {% if v %}{{ v.low }} – {{ v.high }} (exp {{ v.exp }}){% else %}N/A{% endif %}</li>
         {% endfor %}
       </ul>
     </div>
