@@ -1,45 +1,24 @@
-# main.py
+# main.py – FULL WORKING CODE (Nov 17 2025)
 from flask import Flask, render_template, request
 import yfinance as yf
 import requests, math, json, os
-from datetime import date, timedelta
+from datetime import date
 
 app = Flask(__name__)
-RANGE_FILE = "ranges.json"
-
-def _load_ranges():
-    if os.path.exists(RANGE_FILE):
-        try:
-            with open(RANGE_FILE, "r") as f:
-                return json.load(f)
-        except: pass
-    return {"weekly": {}, "monthly": {}}
-
-def _save_ranges(data):
-    tmp = RANGE_FILE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(data, f, indent=2)
-    os.replace(tmp, RANGE_FILE)
-
-def _monday(d: date) -> date:
-    return d - timedelta(days=d.weekday())
-
-def _first_of_month(d: date) -> date:
-    return d.replace(day=1)
 
 def fetch_shares_outstanding():
     try:
-        url = "https://financialmodelingprep.com/api/v3/profile/MSTR?apikey=YOUR_KEY"
-        return int(requests.get(url, timeout=10).json()[0]["outShares"])
+        r = requests.get("https://financialmodelingprep.com/api/v3/profile/MSTR?apikey=demo", timeout=10)
+        return int(r.json()[0]["outShares"])
     except:
-        return 299800000  # Nov 2025 actual
+        return 299800000
 
 def fetch_btc_held():
     try:
         r = requests.get("https://api.saylortracker.com/v1/companies/microstrategy", timeout=10)
         return int(r.json()["bitcoin_holdings"])
     except:
-        return 641205  # Nov 17 2025
+        return 641205
 
 def fetch_fng():
     try:
@@ -57,57 +36,47 @@ def fetch_mvrv():
     except:
         return "N/A"
 
-def _expected_move(iv, price, days):
-    return price * iv * math.sqrt(days / 365)
-
-def _avg_iv(ticker, exp):
-    try:
-        chain = ticker.option_chain(exp)
-        ivs = [v for v in chain.calls.impliedVolatility.append(chain.puts.impliedVolatility) if 0 < v < 5]
-        return sum(ivs)/len(ivs) if ivs else None
-    except: return None
-
-def _closest_expiry(days, dates):
-    target = date.today().toordinal() + days
-    return min(dates, key=lambda x: abs(date.fromisoformat(x).toordinal() - target))
-
 def get_data(btc_held, shares_out, btc_future):
     btc_price = yf.Ticker("BTC-USD").history(period="1d")["Close"].iloc[-1]
     mstr = yf.Ticker("MSTR")
     price = mstr.history(period="1d")["Close"].iloc[-1]
     yesterday = mstr.history(period="2d")["Close"].iloc[-2]
 
-    # Short-term moves
     moves = {}
     expiries = mstr.options
     if expiries:
         targets = {"1 Day": 1, "1 Week": 7, "1 Month": 30}
-        for label, d in targets.items():
-            exp = _closest_expiry(d, expiries)
-            iv = _avg_iv(mstr, exp)
-            if iv:
-                days = max((date.fromisoformat(exp) - date.today()).days, 1)
-                move = _expected_move(iv, yesterday, days)
-                moves[label] = {"low": round(yesterday - move), "high": round(yesterday + move), "exp": exp}
-            else:
-                moves[label] = None
+        for label, days in targets.items():
+            exp = min(expiries, key=lambda x: abs((date.fromisoformat(x) - date.today()).days - days))
+            chain = mstr.option_chain(exp)
+            ivs = chain.calls.impliedVolatility.tolist() + chain.puts.impliedVolatility.tolist()
+            ivs = [iv for iv in ivs if iv > 0.01]
+            iv = sum(ivs)/len(ivs) if ivs else 0
+            actual_days = max((date.fromisoformat(exp) - date.today()).days, 1)
+            move = yesterday * iv * math.sqrt(actual_days / 365)
+            moves[label] = {
+                "low": int(yesterday - move),
+                "high": int(yesterday + move),
+                "exp": exp
+            }
+    else:
+        moves = {"1 Day": None, "1 Week": None, "1 Month": None}
 
     btc_value = btc_price * btc_held
     market_cap = price * shares_out
     mnav = market_cap / btc_value
-
     future_value = btc_future * btc_held
     proj_25 = (future_value * 2.5) / shares_out
     proj_4 = (future_value * 4) / shares_out
 
     return {
-        "btc_price": round(btc_price),
+        "btc_price": int(btc_price),
         "mnav": round(mnav, 2),
-        "price_at_1": round(price / mnav, 2),
-        "price_at_25": round(price * 2.5 / mnav, 2),
-        "price_at_4": round(price * 4 / mnav, 2),
-        "projected_25": round(proj_25),
-        "projected_4": round(proj_4),
+        "price_at_1": int(price / mnav),
+        "price_at_25": int(price * 2.5 / mnav),
+        "price_at_4": int(price * 4 / mnav),
+        "projected_25": int(proj_25),
+        "projected_4": int(proj_4),
         "moves": moves,
         "fear_greed": fetch_fng(),
         "mvrv_z": fetch_mvrv()
