@@ -1,4 +1,4 @@
-# main.py – FULL WORKING CODE (Nov 17 2025)
+# main.py – FIXED MVRV (uses CoinMetrics free API)
 from flask import Flask, render_template, request
 import yfinance as yf
 import requests, math, json, os
@@ -30,9 +30,19 @@ def fetch_fng():
 
 def fetch_mvrv():
     try:
-        mc = requests.get("https://api.blockchain.info/charts/market-cap?format=json&timespan=1days").json()["values"][-1]["y"] * 1e6
-        rc = requests.get("https://api.blockchain.info/charts/realized-cap?format=json&timespan=1days").json()["values"][-1]["y"] * 1e6
-        return round(mc / rc, 3)
+        today = date.today().isoformat()
+        params = {
+            "metrics": "CapMrktCurUSD,CapRealizedUSD",
+            "frequency": "1d",
+            "start": today,
+            "end": today
+        }
+        r = requests.get("https://community-api.coinmetrics.io/v2/assets/btc/metric-data", params=params, timeout=10)
+        data = r.json()["data"]["metricData"]["series"][0]
+        if len(data) < 3: raise ValueError("Insufficient data")
+        mcap = float(data[1])
+        rcap = float(data[2])
+        return round(mcap / rcap, 3)
     except:
         return "N/A"
 
